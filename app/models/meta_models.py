@@ -5,7 +5,11 @@ from datetime import datetime
 from typing import Optional, Any
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+    BigInteger, Boolean, 
+    DateTime, ForeignKey, 
+    Integer, JSON, 
+    String, Text, 
+    UniqueConstraint, Index
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -38,6 +42,7 @@ class DCModule(Base):
     __tablename__ = "dc_modules"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name"),
+        Index("ix_dc_modules_workspace_id", "workspace_id"),
         {"schema": SCHEMA},
     )
 
@@ -45,8 +50,8 @@ class DCModule(Base):
     workspace_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey(f"{SCHEMA}.dc_workspaces.id", ondelete="CASCADE"), nullable=False
     )
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    code: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(Text, nullable=False)  
 
     usergroup_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     added_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -69,6 +74,7 @@ class DCScript(Base):
     __tablename__ = "dc_script_store"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name"),
+        Index("ix_dc_script_store_workspace_id", "workspace_id"),
         {"schema": SCHEMA},
     )
 
@@ -76,8 +82,8 @@ class DCScript(Base):
     workspace_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey(f"{SCHEMA}.dc_workspaces.id", ondelete="SET NULL"), nullable=True
     )
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    code: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
     meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     usergroup_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -96,6 +102,8 @@ class DCScratchpad(Base):
     __tablename__ = "dc_scratchpad"
     __table_args__ = (
         UniqueConstraint("workspace_id", "key"),
+        Index("ix_dc_scratchpad_workspace_id", "workspace_id"),
+        Index("ix_dc_scratchpad_key", "key"),
         {"schema": SCHEMA},
     )
 
@@ -117,6 +125,7 @@ class DCArtifact(Base):
     __tablename__ = "dc_artifacts"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name"),
+        Index("ix_dc_artifacts_workspace_id", "workspace_id"),
         {"schema": SCHEMA},
     )
 
@@ -136,7 +145,10 @@ class DCArtifact(Base):
 
 class DCRun(Base):
     __tablename__ = "dc_runs"
-    __table_args__ = {"schema": SCHEMA}
+    __table_args__ = (
+        Index("ix_dc_runs_workspace_id", "workspace_id"),
+        {"schema": SCHEMA},
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     workspace_id: Mapped[Optional[int]] = mapped_column(

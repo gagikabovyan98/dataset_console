@@ -1,6 +1,5 @@
 # app/services/scaffold.py
 
-
 def build_scaffold_code(pairs: list[tuple[str, str]], default_limit: int = 1000) -> str:
     lines: list[str] = []
     lines.append("#!/usr/bin/env python3")

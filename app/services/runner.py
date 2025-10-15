@@ -1,10 +1,10 @@
 # app/services/runner.py
 
-from __future__ import annotations
 import ast
 import subprocess
 import os
 import base64
+from __future__ import annotations
 from typing import List, Optional, Set
 from fastapi import HTTPException
 from app.config import settings
@@ -34,9 +34,6 @@ BAD_OS_ATTRS = {
 
 
 def _ast_check(src: str, *, allowed_modules: Set[str]) -> None:
-    """Парсим AST и проверяем импорты/опасные обращения.
-    allowed_modules = ALLOWED_MODULES_BASE ∪ {имена опубликованных модулей}
-    """
     try:
         tree = ast.parse(src)
     except Exception as e:
@@ -84,19 +81,16 @@ def _base_env() -> dict:
     if settings.CH_DATABASE:
         env["CH_DATABASE"] = settings.CH_DATABASE
 
-    # MinIO env
     for k in ("MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_SECURE"):
         v = os.getenv(k)
         if v is not None:
             env[k] = v
 
-    # Persist settings
     for k in ("PERSIST_BUCKET", "PERSIST_PREFIX", "AUTO_UPLOAD_MINIO"):
         v = os.getenv(k)
         if v is not None:
             env[k] = v
 
-    # Threads/jemalloc
     for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         env[k] = os.getenv(k, "1")
     env["MALLOC_CONF"] = os.getenv("MALLOC_CONF", "background_thread:false")
@@ -160,7 +154,7 @@ def run_script_in_docker(
         "--tmpfs",
         "/work:rw,noexec,nosuid,size=64m",
         "--tmpfs",
-        "/opt/dc_modules:rw,noexec,nosuid,size=8m",  # каталог для модулей
+        "/opt/dc_modules:rw,noexec,nosuid,size=8m",
         "--workdir",
         "/work",
         "--cap-drop",
@@ -180,7 +174,7 @@ def run_script_in_docker(
         cmd += ["-e", f"{k}={v}"]
 
     image = getattr(settings, "SANDBOX_IMAGE", "dataset-console:py311-ch_v4")
-    cmd += [image]  # ENTRYPOINT выполнит код
+    cmd += [image]
 
     try:
         proc = subprocess.run(

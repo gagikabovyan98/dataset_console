@@ -1,6 +1,5 @@
 # app/services/runner_pool.py
 
-import os
 import asyncio
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
