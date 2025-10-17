@@ -1,5 +1,4 @@
 # app/main.py
-
 from contextlib import asynccontextmanager
 import asyncio
 import os
@@ -7,9 +6,7 @@ import subprocess
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app.routers import api as api_router
-from app.services.db_init import init_db
 
 def _warmup_sandbox_image():
     image = os.getenv("SANDBOX_IMAGE", "dataset-console:py311-ch_v4")
@@ -39,17 +36,16 @@ def _warmup_sandbox_image():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await asyncio.to_thread(_warmup_sandbox_image)
-    await asyncio.to_thread(init_db)
     yield
 
 app = FastAPI(title="Dataset Console", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(api_router)

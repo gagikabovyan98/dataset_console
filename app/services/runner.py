@@ -8,7 +8,6 @@ import base64
 from typing import List, Optional, Set
 from fastapi import HTTPException
 from app.config import settings
-from app.services.datasets_service import fetch_dataset_map
 
 ALLOWED_MODULES_BASE: Set[str] = {
     "math","statistics","json","csv","itertools","functools","operator",
@@ -16,7 +15,6 @@ ALLOWED_MODULES_BASE: Set[str] = {
     "hashlib","hmac","base64","uuid","random","pprint","warnings","logging",
     "numpy","pandas","urllib","urllib.request","http","http.client","sklearn"
 }
-
 BANNED_NAMES = {
     "open","__import__","eval","exec","compile","input","help","vars","dir",
     "globals","locals","quit","exit","getattr","setattr","delattr",
@@ -24,7 +22,6 @@ BANNED_NAMES = {
     "multiprocessing","selectors","importlib","builtins","inspect",
     "site","resource","signal","traceback","pkgutil"
 }
-
 BAD_OS_ATTRS = {
     "system","popen","fork","forkpty","spawnl","spawnle","spawnlp","spawnlpe",
     "spawnv","spawnve","spawnvp","spawnvpe",
@@ -32,24 +29,18 @@ BAD_OS_ATTRS = {
     "_exit","kill","killpg","remove","unlink","rmdir","removedirs","rename","replace","symlink"
 }
 
-
 def _ast_check(src: str, *, allowed_modules: Set[str]) -> None:
     try:
         tree = ast.parse(src)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Syntax error: {e}")
-
     for n in ast.walk(tree):
         if isinstance(n, (ast.Import, ast.ImportFrom)):
-            mods = []
-            if isinstance(n, ast.Import):
-                mods = [a.name.split(".")[0] for a in n.names]
-            else:
-                root = (n.module or "").split(".")[0]
-                if root:
-                    mods = [root]
-            for m in mods:
-                if m not in allowed_modules:
+            roots = [a.name.split(".")[0] for a in getattr(n, "names", [])] if hasattr(n, "names") else []
+            if not roots and getattr(n, "module", None):
+                roots = [(n.module or "").split(".")[0]]
+            for m in roots:
+                if m and m not in allowed_modules:
                     raise HTTPException(status_code=400, detail=f"Import of '{m}' is not allowed")
         if isinstance(n, ast.Name) and n.id in BANNED_NAMES:
             raise HTTPException(status_code=400, detail=f"Use of '{n.id}' is forbidden")
@@ -59,10 +50,8 @@ def _ast_check(src: str, *, allowed_modules: Set[str]) -> None:
             if getattr(getattr(n.func, "value", None), "id", None) == "os" and n.func.attr in BAD_OS_ATTRS:
                 raise HTTPException(status_code=400, detail=f"os.{n.func.attr} is forbidden")
 
-
 def _shorten(s: str, limit: int) -> str:
     return s if len(s) <= limit else s[:limit] + f"\n\n...[truncated {len(s)-limit} bytes]"
-
 
 def _base_env() -> dict:
     env = {
@@ -80,22 +69,14 @@ def _base_env() -> dict:
     }
     if settings.CH_DATABASE:
         env["CH_DATABASE"] = settings.CH_DATABASE
-
-    for k in ("MINIO_ENDPOINT", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_SECURE"):
-        v = os.getenv(k)
-        if v is not None:
-            env[k] = v
-
-    for k in ("PERSIST_BUCKET", "PERSIST_PREFIX", "AUTO_UPLOAD_MINIO"):
-        v = os.getenv(k)
-        if v is not None:
-            env[k] = v
-
-    for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    for k in ("MINIO_ENDPOINT","MINIO_ACCESS_KEY","MINIO_SECRET_KEY","MINIO_SECURE"):
+        v = os.getenv(k);  env[k] = v if v is not None else env.get(k)
+    for k in ("PERSIST_BUCKET","PERSIST_PREFIX","AUTO_UPLOAD_MINIO"):
+        v = os.getenv(k);  env[k] = v if v is not None else env.get(k)
+    for k in ("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","NUMEXPR_NUM_THREADS"):
         env[k] = os.getenv(k, "1")
     env["MALLOC_CONF"] = os.getenv("MALLOC_CONF", "background_thread:false")
     return env
-
 
 def run_script_in_docker(
     script: str,
@@ -113,62 +94,31 @@ def run_script_in_docker(
     allowed = set(ALLOWED_MODULES_BASE)
     if extra_allowed_imports:
         allowed.update(extra_allowed_imports)
-
     _ast_check(code, allowed_modules=allowed)
 
     env = _base_env()
     env["USER_CODE_B64"] = base64.b64encode(code.encode("utf-8")).decode("ascii")
 
-    if dataset_ids:
-        max_datasets = settings.MAX_DATASETS
-        if len(dataset_ids) > max_datasets:
-            raise HTTPException(status_code=422, detail=f"Too many datasets (max {max_datasets})")
-        id_map = fetch_dataset_map(dataset_ids)
-        missing = [i for i in dataset_ids if i not in id_map]
-        if missing:
-            raise HTTPException(
-                status_code=404,
-                detail={"message": "Some dataset IDs not found", "missing_ids": missing},
-            )
-        for idx, did in enumerate(dataset_ids, start=1):
-            title, table = id_map[did]
-            env[f"DATASET{idx}_ID"] = str(did)
-            env[f"DATASET{idx}_TITLE"] = title
-            env[f"DATASET{idx}_TABLE"] = table
-        env["DATASET_COUNT"] = str(len(dataset_ids))
+    # только лимит — сами ENV для датасетов выставлены в core.py
+    if dataset_ids and len(dataset_ids) > settings.MAX_DATASETS:
+        raise HTTPException(status_code=422, detail=f"Too many datasets (max {settings.MAX_DATASETS})")
 
     if extra_env:
         env.update(extra_env)
 
     cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-i",
-        "--pull=never",
-        "--user",
-        "1000:1000",
-        "--read-only",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=64m",
-        "--tmpfs",
-        "/work:rw,noexec,nosuid,size=64m",
-        "--tmpfs",
-        "/opt/dc_modules:rw,noexec,nosuid,size=8m",
-        "--workdir",
-        "/work",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges:true",
-        "--network",
-        "host",
-        "--pids-limit",
-        "128",
-        "--memory",
-        "512m",
-        "--cpus",
-        "0.5",
+        "docker","run","--rm","-i","--pull=never",
+        "--user","1000:1000","--read-only",
+        "--tmpfs","/tmp:rw,noexec,nosuid,size=64m",
+        "--tmpfs","/work:rw,noexec,nosuid,size=64m",
+        "--tmpfs","/opt/dc_modules:rw,noexec,nosuid,size=8m",
+        "--workdir","/work",
+        "--cap-drop","ALL",
+        "--security-opt","no-new-privileges:true",
+        "--network","host",
+        "--pids-limit","128",
+        "--memory","512m",
+        "--cpus","0.5",
     ]
     for k, v in env.items():
         cmd += ["-e", f"{k}={v}"]
